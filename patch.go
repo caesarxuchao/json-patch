@@ -17,10 +17,11 @@ const (
 var SupportNegativeIndices bool = true
 
 type lazyNode struct {
-	raw   *json.RawMessage
-	doc   partialDoc
-	ary   partialArray
-	which int
+	raw         *json.RawMessage
+	doc         partialDoc
+	ary         partialArray
+	which       int
+	marshalling bool
 }
 
 type operation map[string]*json.RawMessage
@@ -39,10 +40,15 @@ type container interface {
 }
 
 func newLazyNode(raw *json.RawMessage) *lazyNode {
-	return &lazyNode{raw: raw, doc: nil, ary: nil, which: eRaw}
+	return &lazyNode{raw: raw, doc: nil, ary: nil, which: eRaw, marshalling: false}
 }
 
 func (n *lazyNode) MarshalJSON() ([]byte, error) {
+	if n.marshalling {
+		return nil, fmt.Errorf("detected loop in the object")
+	}
+	n.marshalling = true
+	defer func() { n.marshalling = false }()
 	switch n.which {
 	case eRaw:
 		return json.Marshal(n.raw)
