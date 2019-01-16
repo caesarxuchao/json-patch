@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -160,6 +161,11 @@ var Cases = []Case{
 	},
 	{
 		`[ {"foo": ["bar","qux","baz"], "bar": ["qux","baz"]}]`,
+		`[ { "op": "copy", "from": "/0/foo/0", "path": "/0/foo/1"}]`,
+		`[ {"foo": ["bar","bar","baz"], "bar": ["qux", "baz"]}]`,
+	},
+	{
+		`[ {"foo": ["bar","qux","baz"], "bar": ["qux","baz"]}]`,
 		`[ { "op": "copy", "from": "/0/foo/0", "path": "/0/bar"}]`,
 		`[ {"foo": ["bar","qux","baz"], "bar": ["bar", "qux", "baz"]}]`,
 	},
@@ -201,17 +207,19 @@ var Cases = []Case{
 }
 
 type BadCase struct {
-	doc, patch string
+	doc, patch, expectedError string
 }
 
 var MutationTestCases = []BadCase{
 	{
 		`{ "foo": "bar", "qux": { "baz": 1, "bar": null } }`,
 		`[ { "op": "remove", "path": "/qux/bar" } ]`,
+		"",
 	},
 	{
 		`{ "foo": "bar", "qux": { "baz": 1, "bar": null } }`,
 		`[ { "op": "replace", "path": "/qux/baz", "value": null } ]`,
+		"",
 	},
 }
 
@@ -219,70 +227,92 @@ var BadCases = []BadCase{
 	{
 		`{ "foo": "bar" }`,
 		`[ { "op": "add", "path": "/baz/bat", "value": "qux" } ]`,
+		"doc is missing path",
 	},
 	{
 		`{ "a": { "b": { "d": 1 } } }`,
 		`[ { "op": "remove", "path": "/a/b/c" } ]`,
+		"Unable to remove nonexistent key",
 	},
 	{
 		`{ "a": { "b": { "d": 1 } } }`,
 		`[ { "op": "move", "from": "/a/b/c", "path": "/a/b/e" } ]`,
+		"Unable to remove nonexistent key",
 	},
 	{
 		`{ "a": { "b": [1] } }`,
 		`[ { "op": "remove", "path": "/a/b/1" } ]`,
+		"Unable to access invalid index",
 	},
 	{
 		`{ "a": { "b": [1] } }`,
 		`[ { "op": "move", "from": "/a/b/1", "path": "/a/b/2" } ]`,
+		"Unable to access invalid index",
 	},
 	{
 		`{ "foo": "bar" }`,
 		`[ { "op": "add", "pathz": "/baz", "value": "qux" } ]`,
+		"doc is missing path",
 	},
 	{
 		`{ "foo": "bar" }`,
 		`[ { "op": "add", "path": "", "value": "qux" } ]`,
+		"doc is missing path",
 	},
 	{
 		`{ "foo": ["bar","baz"]}`,
 		`[ { "op": "replace", "path": "/foo/2", "value": "bum"}]`,
+		"doc is missing key",
 	},
 	{
 		`{ "foo": ["bar","baz"]}`,
 		`[ { "op": "add", "path": "/foo/-4", "value": "bum"}]`,
+		"Unable to access invalid index",
 	},
 	{
 		`{ "name":{ "foo": "bat", "qux": "bum"}}`,
 		`[ { "op": "replace", "path": "/foo/bar", "value":"baz"}]`,
+		"doc is missing path",
 	},
 	{
 		`{ "foo": ["bar"]}`,
 		`[ {"op": "add", "path": "/foo/2", "value": "bum"}]`,
+		"Unable to access invalid index",
 	},
 	{
 		`{ "foo": []}`,
 		`[ {"op": "remove", "path": "/foo/-"}]`,
+		"invalid syntax",
 	},
 	{
 		`{ "foo": []}`,
 		`[ {"op": "remove", "path": "/foo/-1"}]`,
+		"Unable to access invalid index",
 	},
 	{
 		`{ "foo": ["bar"]}`,
 		`[ {"op": "remove", "path": "/foo/-2"}]`,
-  },
-  {
+		"Unable to access invalid index",
+	},
+	{
 		`{}`,
 		`[ {"op":null,"path":""} ]`,
+		"Unexpected kind",
 	},
 	{
 		`{}`,
 		`[ {"op":"add","path":null} ]`,
+		"doc is missing path",
 	},
 	{
 		`{}`,
 		`[ { "op": "copy", "from": null }]`,
+		"doc is missing from path",
+	},
+	{
+		`{ "foo": ["bar"]}`,
+		`[{"op": "copy", "path": "/foo/0", "from": "/foo"}]`,
+		"detected loop in the object",
 	},
 }
 
@@ -318,6 +348,9 @@ func TestAllCases(t *testing.T) {
 
 		if err == nil {
 			t.Errorf("Patch should have failed to apply but it did not")
+		}
+		if c.expectedError != "" && !strings.Contains(err.Error(), c.expectedError) {
+			t.Errorf("Expect error to contain %q, got %v", c.expectedError, err)
 		}
 	}
 }
