@@ -17,6 +17,7 @@ const (
 var SupportNegativeIndices bool = true
 var ArraySizeLimit int = 0
 var ArraySizeAdditionLimit int = 0
+var RawMessageSizeLimit int = 0
 
 type lazyNode struct {
 	raw   *json.RawMessage
@@ -40,8 +41,15 @@ type container interface {
 	remove(key string) error
 }
 
-func newLazyNode(raw *json.RawMessage) *lazyNode {
-	return &lazyNode{raw: raw, doc: nil, ary: nil, which: eRaw}
+func newLazyNode(raw *json.RawMessage) (*lazyNode, error) {
+	var sz int
+	if raw != nil {
+		sz = len(*raw)
+	}
+	if RawMessageSizeLimit > 0 && sz > RawMessageSizeLimit {
+		return nil, fmt.Errorf("Unable to create lazyNode with RawMessage of size %d, limit is %d", sz, RawMessageSizeLimit)
+	}
+	return &lazyNode{raw: raw, doc: nil, ary: nil, which: eRaw}, nil
 }
 
 func (n *lazyNode) MarshalJSON() ([]byte, error) {
@@ -75,7 +83,7 @@ func deepCopy(src *lazyNode) (*lazyNode, error) {
 	}
 	ra := make(json.RawMessage, len(a))
 	copy(ra, a)
-	return newLazyNode(&ra), nil
+	return newLazyNode(&ra)
 }
 
 func (n *lazyNode) intoDoc() (*partialDoc, error) {
@@ -268,12 +276,12 @@ func (o operation) from() string {
 	return "unknown"
 }
 
-func (o operation) value() *lazyNode {
+func (o operation) value() (*lazyNode, error) {
 	if obj, ok := o["value"]; ok {
 		return newLazyNode(obj)
 	}
 
-	return nil
+	return nil, nil
 }
 
 func isArray(buf []byte) bool {
@@ -497,7 +505,11 @@ func (p Patch) add(doc *container, op operation) error {
 		return fmt.Errorf("jsonpatch add operation does not apply: doc is missing path: \"%s\"", path)
 	}
 
-	return con.add(key, op.value())
+	val, err := op.value()
+	if err != nil {
+		return err
+	}
+	return con.add(key, val)
 }
 
 func (p Patch) remove(doc *container, op operation) error {
@@ -526,7 +538,11 @@ func (p Patch) replace(doc *container, op operation) error {
 		return fmt.Errorf("jsonpatch replace operation does not apply: doc is missing key: %s", path)
 	}
 
-	return con.set(key, op.value())
+	val, err := op.value()
+	if err != nil {
+		return err
+	}
+	return con.set(key, val)
 }
 
 func (p Patch) move(doc *container, op operation) error {
@@ -574,16 +590,20 @@ func (p Patch) test(doc *container, op operation) error {
 		return err
 	}
 
+	opVal, err := op.value()
+	if err != nil {
+		return err
+	}
 	if val == nil {
-		if op.value().raw == nil {
+		if opVal.raw == nil {
 			return nil
 		}
 		return fmt.Errorf("Testing value %s failed", path)
-	} else if op.value() == nil {
+	} else if opVal == nil {
 		return fmt.Errorf("Testing value %s failed", path)
 	}
 
-	if val.equal(op.value()) {
+	if val.equal(opVal) {
 		return nil
 	}
 
@@ -624,11 +644,17 @@ func (p Patch) copy(doc *container, op operation) error {
 func Equal(a, b []byte) bool {
 	ra := make(json.RawMessage, len(a))
 	copy(ra, a)
-	la := newLazyNode(&ra)
+	la, err := newLazyNode(&ra)
+	if err != nil {
+		panic(err)
+	}
 
 	rb := make(json.RawMessage, len(b))
 	copy(rb, b)
-	lb := newLazyNode(&rb)
+	lb, err := newLazyNode(&rb)
+	if err != nil {
+		panic(err)
+	}
 
 	return la.equal(lb)
 }

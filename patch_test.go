@@ -11,6 +11,7 @@ import (
 func init() {
 	ArraySizeLimit = 1000
 	ArraySizeAdditionLimit = 10
+	RawMessageSizeLimit = 100
 }
 
 func reformatJSON(j string) string {
@@ -46,6 +47,14 @@ func applyPatch(doc, patch string) (string, error) {
 	}
 
 	return string(out), nil
+}
+
+func repeatedA(r int) string {
+	var s string
+	for i := 0; i < r; i++ {
+		s += "A"
+	}
+	return s
 }
 
 type Case struct {
@@ -122,6 +131,12 @@ var Cases = []Case{
 		`{ "foo": "bar" }`,
 		`[ { "op": "add", "path": "/child", "value": { "grandchild": { } } } ]`,
 		`{ "foo": "bar", "child": { "grandchild": { } } }`,
+	},
+	{
+		`{ "foo": "bar" }`,
+		// The wrapping quote around 'A's are counted in the size of RawMessage, so it can only have 98 repeated 'A's.
+		fmt.Sprintf(`[ { "op": "add", "path": "/child", "value": %q } ]`, repeatedA(98)),
+		fmt.Sprintf(`{ "foo": "bar", "child": %q }`, repeatedA(98)),
 	},
 	{
 		`{ "foo": ["bar"] }`,
@@ -302,6 +317,18 @@ var BadCases = []BadCase{
 	{
 		`{ "foo": ["bar"]}`,
 		`[{"op": "copy", "path": "/foo/2", "from": "/foo/0"}]`,
+	},
+	{
+		`{ "foo": "bar" }`,
+		// The wrapping quote around 'A's are counted in the size of RawMessage, so 99 repeated 'A's should exceed the limit.
+		fmt.Sprintf(`[ { "op": "add", "path": "/child", "value": %q } ]`, repeatedA(99)),
+	},
+	// Second copy operation is disallowed because it requires creating RawMessage of size 117.
+	{
+		fmt.Sprintf(`{ "foo": ["A", %q] }`, repeatedA(50)),
+		// The wrapping quote around 'A's are counted in the size of RawMessage, so 99 repeated 'A's should exceed the limit.
+		`[ { "op": "copy", "path": "/foo/0", "from": "/foo" },
+		   { "op": "copy", "path": "/foo/0", "from": "/foo" }]`,
 	},
 }
 
