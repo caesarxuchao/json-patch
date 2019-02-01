@@ -646,6 +646,11 @@ func DecodePatch(buf []byte) (Patch, error) {
 	return p, nil
 }
 
+// Length returns the number of operations in the Patch.
+func (p Patch) Length() int {
+	return len(Patch)
+}
+
 // Apply mutates a JSON document according to the patch, and returns the new
 // document.
 func (p Patch) Apply(doc []byte) ([]byte, error) {
