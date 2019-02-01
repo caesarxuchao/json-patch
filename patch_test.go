@@ -119,6 +119,11 @@ var Cases = []Case{
 		`{ "foo": [ "all", "cows", "eat", "grass" ] }`,
 	},
 	{
+		`{ "foo": [ "all", "grass", "cows", "eat" ] }`,
+		`[ { "op": "move", "from": "/foo/3", "path": "/foo/1" } ]`,
+		`{ "foo": [ "all", "eat" , "grass", "cows"] }`,
+	},
+	{
 		`{ "foo": "bar" }`,
 		`[ { "op": "add", "path": "/child", "value": { "grandchild": { } } } ]`,
 		`{ "foo": "bar", "child": { "grandchild": { } } }`,
@@ -246,6 +251,16 @@ var BadCases = []BadCase{
 		`{ "a": { "b": [1] } }`,
 		`[ { "op": "move", "from": "/a/b/1", "path": "/a/b/2" } ]`,
 	},
+	// The "from" location MUST NOT be a proper prefix of the "path" location.
+	{
+		`{ "a": { "b": [1] } }`,
+		`[ { "op": "move", "from": "/a", "path": "/a/b" } ]`,
+	},
+	// The "from" location MUST NOT be a proper prefix of the "path" location.
+	{
+		`{ "a": { "b": [1] } }`,
+		`[ { "op": "move", "from": "/a", "path": "/a/b/0" } ]`,
+	},
 	{
 		`{ "foo": "bar" }`,
 		`[ { "op": "add", "pathz": "/baz", "value": "qux" } ]`,
@@ -302,6 +317,11 @@ var BadCases = []BadCase{
 	{
 		`{ "foo": ["bar"]}`,
 		`[{"op": "copy", "path": "/foo/2", "from": "/foo/0"}]`,
+	},
+	// Can't move into an index greater than the size of the array
+	{
+		`{ "foo": ["bar"]}`,
+		`[{"op": "move", "path": "/foo/2", "from": "/foo/0"}]`,
 	},
 }
 
